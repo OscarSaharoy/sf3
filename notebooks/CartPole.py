@@ -232,4 +232,59 @@ def perform_action( state, action=0.0, better_angle=False ):
         self.pole_angle -= np.pi
 
     return np.array( [ self.cart_position, self.cart_velocity, self.pole_angle, self.pole_angvel ] )
+
+def perform_action5( state5 ):
+    
+    self = Object()
+   
+    self.cart_position, self.cart_velocity, self.pole_angle, self.pole_angvel, action = state5
+    
+    self.pole_length = 0.5 
+    self.pole_mass = 0.5 
+
+    self.mu_c = 0.001 # friction coefficient of the cart
+    self.mu_p = 0.001 # friction coefficient of the pole
+    self.sim_steps = 50 # number of Euler integration steps to perform in one go
+    self.delta_time = 0.2 # time step of the Euler integrator 
+    self.max_force = 20.
+    self.gravity = 9.8
+    self.cart_mass = 0.5
+
+    # prevent the force from being too large
+    force = self.max_force * np.tanh(action/self.max_force)
+    dt = self.delta_time / float(self.sim_steps)
+
+    # integrate forward the equations of motion using the Euler method
+    for step in range(self.sim_steps):
+
+        s = np.sin(self.pole_angle)
+        c = np.cos(self.pole_angle)
+
+        m = 4.0 * ( self.cart_mass + self.pole_mass ) - 3.0 * self.pole_mass * c**2
+
+        cart_accel = 1/m * ( 
+            2.0 * ( self.pole_length * self.pole_mass * s * self.pole_angvel**2
+            + 2.0 * ( force - self.mu_c * self.cart_velocity ) )
+            - 3.0 * self.pole_mass * self.gravity * c*s 
+                + 6.0 * self.mu_p * self.pole_angvel * c / self.pole_length
+        ) 
+
+        pole_accel = 1/m * (
+            - 1.5*c / self.pole_length * ( 
+                self.pole_length / 2.0 * self.pole_mass * s * self.pole_angvel**2 
+                + force 
+                - self.mu_c * self.cart_velocity
+            )
+            + 6.0 * ( self.cart_mass + self.pole_mass ) / ( self.pole_mass * self.pole_length ) * \
+            ( self.pole_mass * self.gravity * s - 2.0/self.pole_length * self.mu_p * self.pole_angvel )
+        )
+
+        # Update state variables
+        # Do the updates in this order, so that we get semi-implicit Euler that is simplectic rather than forward-Euler which is not. 
+        self.cart_velocity += dt * cart_accel
+        self.pole_angvel   += dt * pole_accel
+        self.pole_angle    += dt * self.pole_angvel
+        self.cart_position += dt * self.cart_velocity
+        
+    return np.array( [ self.cart_position, self.cart_velocity, self.pole_angle, self.pole_angvel, action ] )
     
