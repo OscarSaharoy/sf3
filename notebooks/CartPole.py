@@ -17,7 +17,9 @@ def remap_angle(theta):
 ## [cart location, cart velocity, pole angle, pole angular velocity]
 
 def loss(state):
-    return 1-np.exp(-np.dot(state,state)/(2.0 * 0.5**2))
+    
+    sigma_l = 0.5
+    return 1 - np.exp( - state @ state / (2.0 * sigma_l**2) )
 
 
 class CartPole:
@@ -31,11 +33,13 @@ class CartPole:
     of round off errors that cause the oscillations to grow until it eventually falls.
     """
 
-    def __init__(self, visual=False, smooth=False, fig_num=1):
+    def __init__(self, visual=False, smooth=False, save_frames=False, fig_num=1):
         
         self.reset() 
         
         self.visual = visual
+        self.save_frames = save_frames
+        self.frame = 0
 
         # Setup pole lengths and masses based on scale of each pole
         # (Papers using multi-poles tend to have them either same lengths/masses
@@ -66,15 +70,11 @@ class CartPole:
 
     # reset the state vector to the initial state (down-hanging pole)
     def reset(self):
-        self.cart_position = 0.0
-        self.cart_velocity = 0.0
-        self.pole_angle    = np.pi
-        self.pole_angvel   = 0.0
-
+        self.set_state( [ 0, 0, np.pi, 0 ] ) 
             
     def set_state(self, state):
         
-        self.cart_position, self.cart_velocity, self.pole_angle, self.pole_angvel = state
+        self.cart_position, self.cart_velocity, self.pole_angle, self.pole_angvel = state[:4]
            
             
     def get_state(self):
@@ -139,10 +139,10 @@ class CartPole:
     def drawPlot(self, fig_num):
         
         plt.ion()
-        self.fig = plt.figure( fig_num, figsize=(9.5,2) )
+        self.fig, self.axes = plt.subplots( 1, 1, num=fig_num, figsize=(9.5,2) )
         
         # draw cart
-        self.axes = self.fig.add_subplot(111, aspect='equal')
+        self.axes.get_yaxis().set_visible(False)
         self.box = plt.Rectangle(xy=(self.cart_position - self.cartwidth / 2.0, -self.cartheight / 2.0), 
                              width=self.cartwidth, height=self.cartheight)
         self.axes.add_artist(self.box)
@@ -159,6 +159,7 @@ class CartPole:
         self.axes.set_ylim(-1, 1)
         #self.fig.tight_layout()
  
+        self.fig.subplots_adjust( top=0.92, bottom=0.17, left=0.02, right=0.98 )
         
     def _render(self):
         
@@ -167,6 +168,10 @@ class CartPole:
         self.pole.set_ydata([ 0, np.cos(self.pole_angle) * self.pole_length ])
 
         self.fig.canvas.draw()
+        
+        if self.save_frames:
+            self.fig.savefig( f"frames/{self.frame}.png", dpi=300 )
+            self.frame += 1
 
 class Object(object):
     pass 
@@ -208,12 +213,12 @@ def perform_action( state, action=0.0, better_angle=False ):
             2.0 * ( self.pole_length * self.pole_mass * s * self.pole_angvel**2
             + 2.0 * ( force - self.mu_c * self.cart_velocity ) )
             - 3.0 * self.pole_mass * self.gravity * c*s 
-                + 6.0 * self.mu_p * self.pole_angvel * c / self.pole_length
+            + 6.0 * self.mu_p * self.pole_angvel * c / self.pole_length
         ) 
 
         pole_accel = 1/m * (
-            - 1.5*c / self.pole_length * ( 
-                self.pole_length / 2.0 * self.pole_mass * s * self.pole_angvel**2 
+            - 3*c * 2/self.pole_length * ( 
+                self.pole_length/2 * self.pole_mass * s * self.pole_angvel**2 
                 + force 
                 - self.mu_c * self.cart_velocity
             )
@@ -233,6 +238,7 @@ def perform_action( state, action=0.0, better_angle=False ):
 
     return np.array( [ self.cart_position, self.cart_velocity, self.pole_angle, self.pole_angvel ] )
 
+
 def perform_action5( state5 ):
     
     self = Object()
@@ -244,7 +250,7 @@ def perform_action5( state5 ):
 
     self.mu_c = 0.001 # friction coefficient of the cart
     self.mu_p = 0.001 # friction coefficient of the pole
-    self.sim_steps = 50 # number of Euler integration steps to perform in one go
+    self.sim_steps = 500 # number of Euler integration steps to perform in one go
     self.delta_time = 0.2 # time step of the Euler integrator 
     self.max_force = 20.
     self.gravity = 9.8
@@ -266,12 +272,12 @@ def perform_action5( state5 ):
             2.0 * ( self.pole_length * self.pole_mass * s * self.pole_angvel**2
             + 2.0 * ( force - self.mu_c * self.cart_velocity ) )
             - 3.0 * self.pole_mass * self.gravity * c*s 
-                + 6.0 * self.mu_p * self.pole_angvel * c / self.pole_length
+            + 6.0 * self.mu_p * self.pole_angvel * c / self.pole_length
         ) 
 
         pole_accel = 1/m * (
-            - 1.5*c / self.pole_length * ( 
-                self.pole_length / 2.0 * self.pole_mass * s * self.pole_angvel**2 
+            - 3*c * 2/self.pole_length * ( 
+                self.pole_length/2 * self.pole_mass * s * self.pole_angvel**2 
                 + force 
                 - self.mu_c * self.cart_velocity
             )
@@ -288,3 +294,70 @@ def perform_action5( state5 ):
         
     return np.array( [ self.cart_position, self.cart_velocity, self.pole_angle, self.pole_angvel, action ] )
     
+
+
+pole_length = 0.5 
+pole_mass   = 0.5 
+mu_c        = 0.001
+mu_p        = 0.001
+max_force   = 20.
+gravity     = 9.8
+cart_mass   = 0.5
+
+
+def perform_action_RK4( state ):
+    
+    h = 0.1 # RK4 step size
+      
+    # perform 2 RK4 steps
+    for _ in range(2):
+        
+        k1 = dstate_dt( state            )
+        k2 = dstate_dt( state + h/2 * k1 ) 
+        k3 = dstate_dt( state + h/2 * k2 ) 
+        k4 = dstate_dt( state + h   * k3 ) 
+
+        state = state + h/6 * ( k1 + 2*k2 + 2*k3 + k4 ) 
+
+    return state
+
+
+def dstate_dt( state ):
+
+    cart_position, \
+    cart_velocity, \
+    pole_angle,    \
+    pole_angvel,   \
+    action = state
+    
+    dstate = np.array( [0., 0, 0, 0, 0] )
+    
+    dstate[0] = state[1]
+    dstate[2] = state[3]
+  
+
+    force = max_force * np.tanh( action / max_force )
+
+    s = np.sin(pole_angle)
+    c = np.cos(pole_angle)
+
+    m = 4.0 * ( cart_mass + pole_mass ) - 3.0 * pole_mass * c**2
+    
+    dstate[1] = 1/m * (
+        2.0 * ( pole_length * pole_mass * s * pole_angvel**2
+        + 2.0 * ( force - mu_c * cart_velocity ) )
+        - 3.0 * pole_mass * gravity * c*s 
+        + 6.0 * mu_p * pole_angvel * c / pole_length
+    ) 
+
+    dstate[3] = 1/m * (
+        - 3.*c * 2./pole_length * ( 
+            pole_length/2. * pole_mass * s * pole_angvel**2 
+            + force 
+            - mu_c * cart_velocity
+        )
+        + 6.0 * ( cart_mass + pole_mass ) / ( pole_mass * pole_length ) * \
+        ( pole_mass * gravity * s - 2.0/pole_length * mu_p * pole_angvel )
+    )
+
+    return dstate
