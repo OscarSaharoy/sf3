@@ -115,7 +115,7 @@ class CartPole:
             ) 
             
             pole_accel = 1/m * (
-                - 1.5*c / self.pole_length * ( 
+                - 3.*c * 2. / self.pole_length * ( 
                     self.pole_length / 2.0 * self.pole_mass * s * self.pole_angvel**2 
                     + force 
                     - self.mu_c * self.cart_velocity
